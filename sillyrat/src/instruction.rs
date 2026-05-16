@@ -1,5 +1,7 @@
+use core::fmt::{Debug, Formatter};
+
 /// All possible SM83 instructions in binary form.
-#[allow(nonstandard_style)]
+#[allow(nonstandard_style, missing_docs)]
 #[derive(Copy, Clone, PartialEq, Debug)]
 #[repr(u8)]
 pub enum Instruction {
@@ -333,41 +335,56 @@ impl Instruction {
         unsafe { *(&self as *const _ as *const u8) }
     }
 
-    /// Parse the opcode.
+    /// Parse the binary.
     ///
-    /// It may be variable-length (i.e. if it takes an immediate value or if it is prefixed).
-    pub fn from_opcode(opcode: &[u8]) -> Result<Self, ReadInstructionError> {
-        let Some(base_opcode) = opcode.first().copied() else {
+    /// It may be variable-length (i.e. if it takes an immediate value or if it is prefixed). All
+    /// instructions can be assumed to be between 1 and 3 bytes.
+    pub fn from_binary(binary: &[u8]) -> Result<Self, ReadInstructionError> {
+        let Some(base_opcode) = binary.first().copied() else {
             return Err(ReadInstructionError::EmptyOpcode)
         };
 
-        let immediate_d8 = || {
-            let &[_, u8] = opcode else {
-                return Err(ReadInstructionError::InvalidLength { given: opcode.len(), expected: 2 })
-            };
-            Ok(u8)
-        };
+        let mut variable_length = false;
 
-        let immediate_s8 = || {
-            immediate_d8().map(|u8| u8 as i8)
-        };
+        macro_rules! immediate_d8 {
+            () => {{
+                variable_length = true;
+                let &[_, u8] = binary else {
+                    return Err(ReadInstructionError::InvalidLength { given: binary.len(), expected: 2 })
+                };
+                Ok(u8)
+            }};
+        }
 
-        let immediate_d16 = || {
-            let &[_, low, high] = opcode else {
-                return Err(ReadInstructionError::InvalidLength { given: opcode.len(), expected: 3 })
-            };
-            Ok(u16::from_le_bytes([low, high]))
-        };
+        macro_rules! immediate_s8 {
+            () => {{
+                variable_length = true;
+                let &[_, u8] = binary else {
+                    return Err(ReadInstructionError::InvalidLength { given: binary.len(), expected: 2 })
+                };
+                Ok(u8 as i8)
+            }};
+        }
 
-        match base_opcode {
+        macro_rules! immediate_d16 {
+            () => {{
+                variable_length = true;
+                let &[_, low, high] = binary else {
+                    return Err(ReadInstructionError::InvalidLength { given: binary.len(), expected: 3 })
+                };
+                Ok(u16::from_le_bytes([low, high]))
+            }};
+        }
+
+        let instruction = match base_opcode {
             0x00 => Ok(Self::NOP),
             0x10 => Ok(Self::STOP),
-            0x20 => Ok(Self::JR_NZ_s8 { s8: immediate_s8()? }),
-            0x30 => Ok(Self::JR_NC_s8 { s8: immediate_s8()? }),
-            0x01 => Ok(Self::LD_BC_d16 { d16: immediate_d16()? }),
-            0x11 => Ok(Self::LD_DE_d16 { d16: immediate_d16()? }),
-            0x21 => Ok(Self::LD_HL_d16 { d16: immediate_d16()? }),
-            0x31 => Ok(Self::LD_SP_d16 { d16: immediate_d16()? }),
+            0x20 => Ok(Self::JR_NZ_s8 { s8: immediate_s8!()? }),
+            0x30 => Ok(Self::JR_NC_s8 { s8: immediate_s8!()? }),
+            0x01 => Ok(Self::LD_BC_d16 { d16: immediate_d16!()? }),
+            0x11 => Ok(Self::LD_DE_d16 { d16: immediate_d16!()? }),
+            0x21 => Ok(Self::LD_HL_d16 { d16: immediate_d16!()? }),
+            0x31 => Ok(Self::LD_SP_d16 { d16: immediate_d16!()? }),
             0x02 => Ok(Self::LD_BC_addr_A),
             0x12 => Ok(Self::LD_DE_addr_A),
             0x22 => Ok(Self::LD_HLi_addr_A),
@@ -384,18 +401,18 @@ impl Instruction {
             0x15 => Ok(Self::DEC_D),
             0x25 => Ok(Self::DEC_H),
             0x35 => Ok(Self::DEC_HL_addr),
-            0x06 => Ok(Self::LD_B_d8 { d8: immediate_d8()? }),
-            0x16 => Ok(Self::LD_D_d8 { d8: immediate_d8()? }),
-            0x26 => Ok(Self::LD_H_d8 { d8: immediate_d8()? }),
-            0x36 => Ok(Self::LD_HL_addr_d8 { d8: immediate_d8()? }),
+            0x06 => Ok(Self::LD_B_d8 { d8: immediate_d8!()? }),
+            0x16 => Ok(Self::LD_D_d8 { d8: immediate_d8!()? }),
+            0x26 => Ok(Self::LD_H_d8 { d8: immediate_d8!()? }),
+            0x36 => Ok(Self::LD_HL_addr_d8 { d8: immediate_d8!()? }),
             0x07 => Ok(Self::RLCA),
             0x17 => Ok(Self::RLA),
             0x27 => Ok(Self::DAA),
             0x37 => Ok(Self::SCF),
-            0x08 => Ok(Self::LD_a16_SP { a16: immediate_d16()? }),
-            0x18 => Ok(Self::JR_s8 { s8: immediate_s8()? }),
-            0x28 => Ok(Self::JR_Z_s8 { s8: immediate_s8()? }),
-            0x38 => Ok(Self::JR_C_s8 { s8: immediate_s8()? }),
+            0x08 => Ok(Self::LD_a16_SP { a16: immediate_d16!()? }),
+            0x18 => Ok(Self::JR_s8 { s8: immediate_s8!()? }),
+            0x28 => Ok(Self::JR_Z_s8 { s8: immediate_s8!()? }),
+            0x38 => Ok(Self::JR_C_s8 { s8: immediate_s8!()? }),
             0x09 => Ok(Self::ADD_HL_BC),
             0x19 => Ok(Self::ADD_HL_DE),
             0x29 => Ok(Self::ADD_HL_HL),
@@ -416,10 +433,10 @@ impl Instruction {
             0x1D => Ok(Self::DEC_E),
             0x2D => Ok(Self::DEC_L),
             0x3D => Ok(Self::DEC_A),
-            0x0E => Ok(Self::LD_C_d8 { d8: immediate_d8()? }),
-            0x1E => Ok(Self::LD_E_d8 { d8: immediate_d8()? }),
-            0x2E => Ok(Self::LD_L_d8 { d8: immediate_d8()? }),
-            0x3E => Ok(Self::LD_A_d8 { d8: immediate_d8()? }),
+            0x0E => Ok(Self::LD_C_d8 { d8: immediate_d8!()? }),
+            0x1E => Ok(Self::LD_E_d8 { d8: immediate_d8!()? }),
+            0x2E => Ok(Self::LD_L_d8 { d8: immediate_d8!()? }),
+            0x3E => Ok(Self::LD_A_d8 { d8: immediate_d8!()? }),
             0x0F => Ok(Self::RRCA),
             0x1F => Ok(Self::RRA),
             0x2F => Ok(Self::CPL),
@@ -554,65 +571,388 @@ impl Instruction {
             0xBF => Ok(Self::CP_A),
             0xC0 => Ok(Self::RET_NZ),
             0xD0 => Ok(Self::RET_NC),
-            0xE0 => Ok(Self::LDH_a8_A { a8: immediate_d8()? }),
-            0xF0 => Ok(Self::LDH_A_a8 { a8: immediate_d8()? }),
+            0xE0 => Ok(Self::LDH_a8_A { a8: immediate_d8!()? }),
+            0xF0 => Ok(Self::LDH_A_a8 { a8: immediate_d8!()? }),
             0xC1 => Ok(Self::POP_BC),
             0xD1 => Ok(Self::POP_DE),
             0xE1 => Ok(Self::POP_HL),
             0xF1 => Ok(Self::POP_AF),
-            0xC2 => Ok(Self::JP_NZ_a16 { a16: immediate_d16()? }),
-            0xD2 => Ok(Self::JP_NC_a16 { a16: immediate_d16()? }),
+            0xC2 => Ok(Self::JP_NZ_a16 { a16: immediate_d16!()? }),
+            0xD2 => Ok(Self::JP_NC_a16 { a16: immediate_d16!()? }),
             0xE2 => Ok(Self::LDH_C_A),
             0xF2 => Ok(Self::LDH_A_C),
-            0xC3 => Ok(Self::JP_A16 { a16: immediate_d16()? }),
+            0xC3 => Ok(Self::JP_A16 { a16: immediate_d16!()? }),
             0xF3 => Ok(Self::DI),
-            0xC4 => Ok(Self::CALL_NZ_a16 { a16: immediate_d16()? }),
-            0xD4 => Ok(Self::CALL_NC_a16 { a16: immediate_d16()? }),
+            0xC4 => Ok(Self::CALL_NZ_a16 { a16: immediate_d16!()? }),
+            0xD4 => Ok(Self::CALL_NC_a16 { a16: immediate_d16!()? }),
             0xC5 => Ok(Self::PUSH_BC),
             0xD5 => Ok(Self::PUSH_DE),
             0xE5 => Ok(Self::PUSH_HL),
             0xF5 => Ok(Self::PUSH_AF),
-            0xC6 => Ok(Self::ADD_A_d8 { d8: immediate_d8()? }),
-            0xD6 => Ok(Self::SUB_d8 { d8: immediate_d8()? }),
-            0xE6 => Ok(Self::AND_d8 { d8: immediate_d8()? }),
-            0xF6 => Ok(Self::OR_d8 { d8: immediate_d8()? }),
+            0xC6 => Ok(Self::ADD_A_d8 { d8: immediate_d8!()? }),
+            0xD6 => Ok(Self::SUB_d8 { d8: immediate_d8!()? }),
+            0xE6 => Ok(Self::AND_d8 { d8: immediate_d8!()? }),
+            0xF6 => Ok(Self::OR_d8 { d8: immediate_d8!()? }),
             0xC7 => Ok(Self::RST_0),
             0xD7 => Ok(Self::RST_2),
             0xE7 => Ok(Self::RST_4),
             0xF7 => Ok(Self::RST_6),
             0xC8 => Ok(Self::RET_Z),
             0xD8 => Ok(Self::RET_C),
-            0xE8 => Ok(Self::ADD_SP_s8 { s8: immediate_s8()? }),
-            0xF8 => Ok(Self::LD_HL_SP_plus_s8 { s8: immediate_s8()? }),
+            0xE8 => Ok(Self::ADD_SP_s8 { s8: immediate_s8!()? }),
+            0xF8 => Ok(Self::LD_HL_SP_plus_s8 { s8: immediate_s8!()? }),
             0xC9 => Ok(Self::RET),
             0xD9 => Ok(Self::RETI),
             0xE9 => Ok(Self::JP_HL),
             0xF9 => Ok(Self::LD_SP_HL),
-            0xCA => Ok(Self::JP_Z_a16 { a16: immediate_d16()? }),
-            0xDA => Ok(Self::JP_C_a16 { a16: immediate_d16()? }),
-            0xEA => Ok(Self::LD_a16_addr_A { a16: immediate_d16()? }),
-            0xFA => Ok(Self::LD_A_a16_addr { a16: immediate_d16()? }),
-            0xCB => Ok(Self::PrefixedInstruction { instruction: PrefixedInstruction::from_opcode(immediate_d8()?) }),
+            0xCA => Ok(Self::JP_Z_a16 { a16: immediate_d16!()? }),
+            0xDA => Ok(Self::JP_C_a16 { a16: immediate_d16!()? }),
+            0xEA => Ok(Self::LD_a16_addr_A { a16: immediate_d16!()? }),
+            0xFA => Ok(Self::LD_A_a16_addr { a16: immediate_d16!()? }),
+            0xCB => Ok(Self::PrefixedInstruction { instruction: PrefixedInstruction::from_opcode(immediate_d8!()?) }),
             0xFB => Ok(Self::EI),
-            0xCC => Ok(Self::CALL_Z_a16 { a16: immediate_d16()? }),
-            0xDC => Ok(Self::CALL_C_a16 { a16: immediate_d16()? }),
-            0xCD => Ok(Self::CALL_a16 { a16: immediate_d16()? }),
-            0xCE => Ok(Self::ADC_A_d8 { d8: immediate_d8()? }),
-            0xDE => Ok(Self::SBC_A_d8 { d8: immediate_d8()? }),
-            0xEE => Ok(Self::XOR_d8 { d8: immediate_d8()? }),
-            0xFE => Ok(Self::CP_d8 { d8: immediate_d8()? }),
+            0xCC => Ok(Self::CALL_Z_a16 { a16: immediate_d16!()? }),
+            0xDC => Ok(Self::CALL_C_a16 { a16: immediate_d16!()? }),
+            0xCD => Ok(Self::CALL_a16 { a16: immediate_d16!()? }),
+            0xCE => Ok(Self::ADC_A_d8 { d8: immediate_d8!()? }),
+            0xDE => Ok(Self::SBC_A_d8 { d8: immediate_d8!()? }),
+            0xEE => Ok(Self::XOR_d8 { d8: immediate_d8!()? }),
+            0xFE => Ok(Self::CP_d8 { d8: immediate_d8!()? }),
             0xCF => Ok(Self::RST_1),
             0xDF => Ok(Self::RST_3),
             0xEF => Ok(Self::RST_5),
             0xFF => Ok(Self::RST_7),
 
             invalid => Err(ReadInstructionError::InvalidOpcode { opcode: invalid })
+        }?;
+
+        if !variable_length && binary.len() != 1 {
+            return Err(ReadInstructionError::InvalidLength { expected: 1, given: binary.len() })
+        }
+
+        Ok(instruction)
+    }
+
+    /// Convert the instruction into binary.
+    #[must_use]
+    pub const fn into_binary(self) -> BinaryInstruction {
+        let opcode = self.opcode();
+
+        match self {
+            Self::NOP
+            | Self::STOP
+            | Self::LD_BC_addr_A
+            | Self::LD_DE_addr_A
+            | Self::LD_HLi_addr_A
+            | Self::LD_HLd_addr_A
+            | Self::INC_BC
+            | Self::INC_DE
+            | Self::INC_HL
+            | Self::INC_SP
+            | Self::INC_B
+            | Self::INC_D
+            | Self::INC_H
+            | Self::INC_HL_addr
+            | Self::DEC_B
+            | Self::DEC_D
+            | Self::DEC_H
+            | Self::DEC_HL_addr
+            | Self::RLCA
+            | Self::RLA
+            | Self::DAA
+            | Self::SCF
+            | Self::ADD_HL_BC
+            | Self::ADD_HL_DE
+            | Self::ADD_HL_HL
+            | Self::ADD_HL_SP
+            | Self::LD_A_BC_addr
+            | Self::LD_A_DE_addr
+            | Self::LD_A_HLi_addr
+            | Self::LD_A_HLd_addr
+            | Self::DEC_BC
+            | Self::DEC_DE
+            | Self::DEC_HL
+            | Self::DEC_SP
+            | Self::INC_C
+            | Self::INC_E
+            | Self::INC_L
+            | Self::INC_A
+            | Self::DEC_C
+            | Self::DEC_E
+            | Self::DEC_L
+            | Self::DEC_A
+            | Self::RRCA
+            | Self::RRA
+            | Self::CPL
+            | Self::CCF
+            | Self::LD_B_B
+            | Self::LD_D_B
+            | Self::LD_H_B
+            | Self::LD_HL_addr_B
+            | Self::LD_B_C
+            | Self::LD_D_C
+            | Self::LD_H_C
+            | Self::LD_HL_addr_C
+            | Self::LD_B_D
+            | Self::LD_D_D
+            | Self::LD_H_D
+            | Self::LD_HL_addr_D
+            | Self::LD_B_E
+            | Self::LD_D_E
+            | Self::LD_H_E
+            | Self::LD_HL_addr_E
+            | Self::LD_B_H
+            | Self::LD_D_H
+            | Self::LD_H_H
+            | Self::LD_HL_addr_H
+            | Self::LD_B_L
+            | Self::LD_D_L
+            | Self::LD_H_L
+            | Self::LD_HL_addr_L
+            | Self::LD_B_HL_addr
+            | Self::LD_D_HL_addr
+            | Self::LD_H_HL_addr
+            | Self::HALT
+            | Self::LD_B_A
+            | Self::LD_D_A
+            | Self::LD_H_A
+            | Self::LD_HL_addr_A
+            | Self::LD_C_B
+            | Self::LD_E_B
+            | Self::LD_L_B
+            | Self::LD_A_B
+            | Self::LD_C_C
+            | Self::LD_E_C
+            | Self::LD_L_C
+            | Self::LD_A_C
+            | Self::LD_C_D
+            | Self::LD_E_D
+            | Self::LD_L_D
+            | Self::LD_A_D
+            | Self::LD_C_E
+            | Self::LD_E_E
+            | Self::LD_L_E
+            | Self::LD_A_E
+            | Self::LD_C_H
+            | Self::LD_E_H
+            | Self::LD_L_H
+            | Self::LD_A_H
+            | Self::LD_C_L
+            | Self::LD_E_L
+            | Self::LD_L_L
+            | Self::LD_A_L
+            | Self::LD_C_HL_addr
+            | Self::LD_E_HL_addr
+            | Self::LD_L_HL_addr
+            | Self::LD_A_HL_addr
+            | Self::LD_C_A
+            | Self::LD_E_A
+            | Self::LD_L_A
+            | Self::LD_A_A
+            | Self::ADD_B
+            | Self::SUB_B
+            | Self::AND_B
+            | Self::OR_B
+            | Self::ADD_C
+            | Self::SUB_C
+            | Self::AND_C
+            | Self::OR_C
+            | Self::ADD_D
+            | Self::SUB_D
+            | Self::AND_D
+            | Self::OR_D
+            | Self::ADD_E
+            | Self::SUB_E
+            | Self::AND_E
+            | Self::OR_E
+            | Self::ADD_H
+            | Self::SUB_H
+            | Self::AND_H
+            | Self::OR_H
+            | Self::ADD_L
+            | Self::SUB_L
+            | Self::AND_L
+            | Self::OR_L
+            | Self::ADD_HL_addr
+            | Self::SUB_HL_addr
+            | Self::AND_HL_addr
+            | Self::OR_HL_addr
+            | Self::ADD_A
+            | Self::SUB_A
+            | Self::AND_A
+            | Self::OR_A
+            | Self::ADC_B
+            | Self::SBC_B
+            | Self::XOR_B
+            | Self::CP_B
+            | Self::ADC_C
+            | Self::SBC_C
+            | Self::XOR_C
+            | Self::CP_C
+            | Self::ADC_D
+            | Self::SBC_D
+            | Self::XOR_D
+            | Self::CP_D
+            | Self::ADC_E
+            | Self::SBC_E
+            | Self::XOR_E
+            | Self::CP_E
+            | Self::ADC_H
+            | Self::SBC_H
+            | Self::XOR_H
+            | Self::CP_H
+            | Self::ADC_L
+            | Self::SBC_L
+            | Self::XOR_L
+            | Self::CP_L
+            | Self::ADC_HL_addr
+            | Self::SBC_HL_addr
+            | Self::XOR_HL_addr
+            | Self::CP_HL_addr
+            | Self::ADC_A
+            | Self::SBC_A
+            | Self::XOR_A
+            | Self::CP_A
+            | Self::RET_NZ
+            | Self::RET_NC
+            | Self::POP_BC
+            | Self::POP_DE
+            | Self::POP_HL
+            | Self::POP_AF
+            | Self::LDH_C_A
+            | Self::LDH_A_C
+            | Self::DI
+            | Self::PUSH_BC
+            | Self::PUSH_DE
+            | Self::PUSH_HL
+            | Self::PUSH_AF
+            | Self::RST_0
+            | Self::RST_2
+            | Self::RST_4
+            | Self::RST_6
+            | Self::RET_Z
+            | Self::RET_C
+            | Self::RET
+            | Self::RETI
+            | Self::JP_HL
+            | Self::LD_SP_HL
+            | Self::EI
+            | Self::RST_1
+            | Self::RST_3
+            | Self::RST_5
+            | Self::RST_7 => BinaryInstruction::single_byte(opcode),
+
+            Self::PrefixedInstruction { instruction } => BinaryInstruction::with_immediate8(opcode, instruction.opcode()),
+
+            Self::CALL_a16 { a16: d16 }
+            | Self::CALL_Z_a16 { a16: d16 }
+            | Self::CALL_C_a16 { a16: d16 }
+            | Self::JP_Z_a16 { a16: d16 }
+            | Self::JP_C_a16 { a16: d16 }
+            | Self::LD_a16_addr_A { a16: d16 }
+            | Self::LD_A_a16_addr { a16: d16 }
+            | Self::LD_a16_SP { a16: d16 }
+            | Self::JP_NZ_a16 { a16: d16 }
+            | Self::JP_NC_a16 { a16: d16 }
+            | Self::CALL_NZ_a16 { a16: d16 }
+            | Self::JP_A16 { a16: d16 }
+            | Self::CALL_NC_a16 { a16: d16 }
+            | Self::LD_BC_d16 { d16 }
+            | Self::LD_DE_d16 { d16 }
+            | Self::LD_HL_d16 { d16 }
+            | Self::LD_SP_d16 { d16 } => BinaryInstruction::with_immediate16(opcode, d16),
+
+            Self::ADD_SP_s8 { s8 }
+            | Self::LD_HL_SP_plus_s8 { s8 }
+            | Self::JR_NZ_s8 { s8 }
+            | Self::JR_NC_s8 { s8 }
+            | Self::JR_s8 { s8 }
+            | Self::JR_Z_s8 { s8 }
+            | Self::JR_C_s8 { s8 } => BinaryInstruction::with_immediate_signed8(opcode, s8),
+
+            Self::ADC_A_d8 { d8 }
+            | Self::SBC_A_d8 { d8 }
+            | Self::XOR_d8 { d8 }
+            | Self::CP_d8 { d8 }
+            | Self::LD_B_d8 { d8 }
+            | Self::LD_D_d8 { d8 }
+            | Self::LD_H_d8 { d8 }
+            | Self::LD_HL_addr_d8 { d8 }
+            | Self::LD_C_d8 { d8 }
+            | Self::LD_E_d8 { d8 }
+            | Self::LD_L_d8 { d8 }
+            | Self::LD_A_d8 { d8 }
+            | Self::LDH_a8_A { a8: d8 }
+            | Self::LDH_A_a8 { a8: d8 }
+            | Self::ADD_A_d8 { d8 }
+            | Self::SUB_d8 { d8 }
+            | Self::AND_d8 { d8 }
+            | Self::OR_d8 { d8 } => BinaryInstruction::with_immediate8(opcode, d8),
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub struct BinaryInstruction {
+    bytes: [u8; 3],
+    length: u8
+}
+
+impl Debug for BinaryInstruction {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        Debug::fmt(self.get_bytes(), f)
+    }
+}
+
+impl BinaryInstruction {
+    #[inline]
+    #[must_use]
+    pub const fn get_bytes(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(self.bytes.as_ptr(), self.length as usize) }
+    }
+
+    #[inline]
+    #[must_use]
+    const fn single_byte(opcode: u8) -> BinaryInstruction {
+        BinaryInstruction {
+            bytes: [opcode, 0, 0],
+            length: 1
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    const fn with_immediate8(opcode: u8, immediate: u8) -> BinaryInstruction {
+        BinaryInstruction {
+            bytes: [opcode, immediate, 0],
+            length: 2
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    const fn with_immediate_signed8(opcode: u8, immediate: i8) -> BinaryInstruction {
+        BinaryInstruction {
+            bytes: [opcode, immediate as u8, 0],
+            length: 2
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    const fn with_immediate16(opcode: u8, immediate: u16) -> BinaryInstruction {
+        let [low, high] = immediate.to_le_bytes();
+
+        BinaryInstruction {
+            bytes: [opcode, low, high],
+            length: 3
         }
     }
 }
 
 /// Instruction read error.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ReadInstructionError {
     /// An invalid opcode was given.
     InvalidOpcode {
@@ -943,5 +1283,115 @@ impl PrefixedInstruction {
     pub const fn from_opcode(opcode: u8) -> Self {
         // SAFETY: Every u8 value is accounted for.
         unsafe { core::mem::transmute(opcode) }
+    }
+}
+
+/// Iterator that takes a byte iterator.
+///
+/// ## Behavior of `self.next()`
+///
+/// The iterator will call `inner.next()` as many times as necessary until it returns `None` or
+/// returns enough bytes for a complete instruction. The instruction buffer will persist between
+/// calls, thus it is valid for `inner.next()` to return `None` temporarily even mid-instruction.
+///
+/// The only possible values are:
+/// * `None` - `inner.next()` returned `None`, or a decoding error occurred previously.
+/// * `Some(Ok(Instruction))` - An instruction was decoded.
+/// * `Some(Err(ReadInstructionError::InvalidOpcode))` - Invalid instruction; all future calls to
+///   this method will return `None`.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct InstructionDecoderByteIterator<B: Iterator<Item = u8>> {
+    inner: B,
+    buffer: [u8; 3],
+    buffer_length: usize,
+    last_error: Option<ReadInstructionError>
+}
+
+impl<I: Iterator<Item = u8>> InstructionDecoderByteIterator<I> {
+    /// Wrap an existing byte iterator.
+    #[inline]
+    pub const fn new(inner: I) -> Self {
+        Self {
+            inner, buffer_length: 0, buffer: [0u8; 3], last_error: None
+        }
+    }
+
+    /// Return `Some` with the last error.
+    #[inline]
+    pub const fn get_error(&self) -> Option<ReadInstructionError> {
+        self.last_error
+    }
+}
+
+impl<I: Iterator<Item = u8>> From<I> for InstructionDecoderByteIterator<I> {
+    fn from(inner: I) -> Self {
+        Self::new(inner)
+    }
+}
+
+impl<I: Iterator<Item = u8>> Iterator for InstructionDecoderByteIterator<I> {
+    type Item = Result<Instruction, ReadInstructionError>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.last_error.is_some() {
+            return None
+        }
+
+        loop {
+            self.buffer[self.buffer_length] = self.inner.next()?;
+            self.buffer_length += 1;
+
+            match Instruction::from_binary(&self.buffer) {
+                Ok(n) => {
+                    self.buffer_length = 0;
+                    return Some(Ok(n))
+                }
+                Err(ReadInstructionError::EmptyOpcode) => unreachable!(),
+                Err(ReadInstructionError::InvalidLength { .. }) => continue,
+                Err(e) => {
+                    self.last_error = Some(e);
+                    return Some(Err(e))
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    extern crate std;
+
+    use crate::instruction::{Instruction, ReadInstructionError};
+
+    #[test]
+    fn round_trip_conversion() {
+        for opcode in 0..0xFFu8 {
+            let expected_number_of_bytes = match Instruction::from_binary(&[opcode]) {
+                Ok(_) => 1,
+                Err(ReadInstructionError::InvalidOpcode { .. }) => {
+                    continue
+                }
+                Err(ReadInstructionError::InvalidLength { expected, .. }) => expected as usize,
+                Err(ReadInstructionError::EmptyOpcode) => unreachable!()
+            };
+
+            let max_operand = match expected_number_of_bytes {
+                1 => 0,
+                2 => 255,
+                3 => 65535,
+                _ => unreachable!()
+            };
+
+            for operand in 0u16..=max_operand {
+                let bytes = operand.to_le_bytes();
+                let bytes = [opcode, bytes[0], bytes[1]];
+                let bytes = &bytes[..expected_number_of_bytes];
+
+                let Ok(instruction) = Instruction::from_binary(bytes) else {
+                    continue;
+                };
+
+                assert_eq!(instruction.into_binary().get_bytes(), bytes, "{instruction:?} failed");
+            }
+        }
     }
 }
