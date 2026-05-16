@@ -105,11 +105,16 @@ impl<'a, F: Fn(u16) -> Option<&'a str>> Display for InstructionDisplay<'a, F> {
         }
 
         fn write_d16<'a, F: Fn(u16) -> Option<&'a str>>(d16: u16, format_config: &FormatConfig<'a, F>, f: &mut Formatter<'_>) -> core::fmt::Result {
-            Display::fmt(&format_config.syntax_dialect.format_hex_16(d16), f)
+            if format_config.resolve_u16 && let Some(n) = (format_config.resolve_symbol)(d16) {
+                f.write_str(n)
+            }
+            else {
+                format_config.write_hex_u16(d16, f)
+            }
         }
 
         fn write_a16<'a, F: Fn(u16) -> Option<&'a str>>(a16: u16, format_config: &FormatConfig<'a, F>, f: &mut Formatter<'_>) -> core::fmt::Result {
-            match (format_config.get_symbol)(a16) {
+            match (format_config.resolve_symbol)(a16) {
                 Some(n) => f.write_str(n),
                 None => write_d16(a16, format_config, f)
             }
@@ -539,23 +544,23 @@ impl<'a, F: Fn(u16) -> Option<&'a str>> Display for InstructionDisplay<'a, F> {
             Instruction::SBC_L => write_instruction!(sbc reg(L)),
             Instruction::SBC_HL_addr => write_instruction!(sbc [reg(HL)]),
 
-            Instruction::SUB_A => write_instruction!(sbc reg(A)),
-            Instruction::SUB_B => write_instruction!(sbc reg(B)),
-            Instruction::SUB_C => write_instruction!(sbc reg(C)),
-            Instruction::SUB_D => write_instruction!(sbc reg(D)),
-            Instruction::SUB_E => write_instruction!(sbc reg(E)),
-            Instruction::SUB_H => write_instruction!(sbc reg(H)),
-            Instruction::SUB_L => write_instruction!(sbc reg(L)),
-            Instruction::SUB_HL_addr => write_instruction!(sbc [reg(HL)]),
+            Instruction::SUB_A => write_instruction!(sub reg(A)),
+            Instruction::SUB_B => write_instruction!(sub reg(B)),
+            Instruction::SUB_C => write_instruction!(sub reg(C)),
+            Instruction::SUB_D => write_instruction!(sub reg(D)),
+            Instruction::SUB_E => write_instruction!(sub reg(E)),
+            Instruction::SUB_H => write_instruction!(sub reg(H)),
+            Instruction::SUB_L => write_instruction!(sub reg(L)),
+            Instruction::SUB_HL_addr => write_instruction!(sub [reg(HL)]),
 
-            Instruction::XOR_A => write_instruction!(sbc reg(A)),
-            Instruction::XOR_B => write_instruction!(sbc reg(B)),
-            Instruction::XOR_C => write_instruction!(sbc reg(C)),
-            Instruction::XOR_D => write_instruction!(sbc reg(D)),
-            Instruction::XOR_E => write_instruction!(sbc reg(E)),
-            Instruction::XOR_H => write_instruction!(sbc reg(H)),
-            Instruction::XOR_L => write_instruction!(sbc reg(L)),
-            Instruction::XOR_HL_addr => write_instruction!(sbc [reg(HL)]),
+            Instruction::XOR_A => write_instruction!(xor reg(A)),
+            Instruction::XOR_B => write_instruction!(xor reg(B)),
+            Instruction::XOR_C => write_instruction!(xor reg(C)),
+            Instruction::XOR_D => write_instruction!(xor reg(D)),
+            Instruction::XOR_E => write_instruction!(xor reg(E)),
+            Instruction::XOR_H => write_instruction!(xor reg(H)),
+            Instruction::XOR_L => write_instruction!(xor reg(L)),
+            Instruction::XOR_HL_addr => write_instruction!(xor [reg(HL)]),
 
             Instruction::PrefixedInstruction { instruction } => match instruction {
                 PrefixedInstruction::BIT_0_A => write_instruction!(bit d8(0), reg(A)),

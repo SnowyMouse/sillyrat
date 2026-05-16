@@ -11,20 +11,20 @@ pub enum SyntaxDialect {
 impl SyntaxDialect {
     /// Format a number as 8-bit hex.
     #[inline]
-    pub const fn format_hex_8(self, number: u8) -> SyntaxDialectFormattedNumberHex {
+    pub const fn format_hex_u8(self, number: u8) -> SyntaxDialectFormattedNumberHex {
         SyntaxDialectFormattedNumberHex { number: number as u32, syntax: self, number_size: 8 }
     }
 
     /// Format a number as 16-bit hex.
     #[inline]
-    pub const fn format_hex_16(self, number: u16) -> SyntaxDialectFormattedNumberHex {
+    pub const fn format_hex_u16(self, number: u16) -> SyntaxDialectFormattedNumberHex {
         SyntaxDialectFormattedNumberHex { number: number as u32, syntax: self, number_size: 16 }
     }
 
     /// Format a number as 32-bit hex.
     #[inline]
-    pub const fn format_hex_32(self, number: u16) -> SyntaxDialectFormattedNumberHex {
-        SyntaxDialectFormattedNumberHex { number: number as u32, syntax: self, number_size: 32 }
+    pub const fn format_hex_u32(self, number: u32) -> SyntaxDialectFormattedNumberHex {
+        SyntaxDialectFormattedNumberHex { number, syntax: self, number_size: 32 }
     }
 }
 
