@@ -1,4 +1,9 @@
-use core::fmt::{Debug, Formatter};
+mod format;
+
+pub use format::InstructionDisplay;
+
+use core::fmt::{Debug, Formatter, Write};
+use crate::format::SyntaxDialect;
 
 /// All possible SM83 instructions in binary form.
 #[allow(nonstandard_style, missing_docs)]
@@ -7,8 +12,9 @@ use core::fmt::{Debug, Formatter};
 pub enum Instruction {
     NOP = 0x00,
     STOP = 0x10,
-    JR_NZ_s8 { s8: i8 } = 0x20,
-    JR_NC_s8 { s8: i8 } = 0x30,
+    
+    JR_NZ_r8 { r8: i8 } = 0x20,
+    JR_NC_r8 { r8: i8 } = 0x30,
 
     LD_BC_d16 { d16: u16 } = 0x01,
     LD_DE_d16 { d16: u16 } = 0x11,
@@ -45,10 +51,10 @@ pub enum Instruction {
     DAA = 0x27,
     SCF = 0x37,
 
-    LD_a16_SP { a16: u16 } = 0x08,
-    JR_s8 { s8: i8 } = 0x18,
-    JR_Z_s8 { s8: i8 } = 0x28,
-    JR_C_s8 { s8: i8 } = 0x38,
+    LD_a16_addr_SP { a16: u16 } = 0x08,
+    JR_r8 { r8: i8 } = 0x18,
+    JR_Z_r8 { r8: i8 } = 0x28,
+    JR_C_r8 { r8: i8 } = 0x38,
 
     ADD_HL_BC = 0x09,
     ADD_HL_DE = 0x19,
@@ -247,8 +253,8 @@ pub enum Instruction {
 
     RET_NZ = 0xC0,
     RET_NC = 0xD0,
-    LDH_a8_A { a8: u8 } = 0xE0,
-    LDH_A_a8 { a8: u8 } = 0xF0,
+    LD_a8_addr_A { a8: u8 } = 0xE0,
+    LD_A_a8_addr { a8: u8 } = 0xF0,
 
     POP_BC = 0xC1,
     POP_DE = 0xD1,
@@ -257,8 +263,8 @@ pub enum Instruction {
 
     JP_NZ_a16 { a16: u16 } = 0xC2,
     JP_NC_a16 { a16: u16 } = 0xD2,
-    LDH_C_A = 0xE2,
-    LDH_A_C = 0xF2,
+    LD_C_addr_A = 0xE2,
+    LD_A_C_addr = 0xF2,
 
     JP_A16 { a16: u16 } = 0xC3,
     // 0xD3
@@ -275,7 +281,7 @@ pub enum Instruction {
     PUSH_HL = 0xE5,
     PUSH_AF = 0xF5,
 
-    ADD_A_d8 { d8: u8 } = 0xC6,
+    ADD_d8 { d8: u8 } = 0xC6,
     SUB_d8 { d8: u8 } = 0xD6,
     AND_d8 { d8: u8 } = 0xE6,
     OR_d8 { d8: u8 } = 0xF6,
@@ -288,7 +294,7 @@ pub enum Instruction {
     RET_Z = 0xC8,
     RET_C = 0xD8,
     ADD_SP_s8 { s8: i8 } = 0xE8,
-    LD_HL_SP_plus_s8 { s8: i8 } = 0xF8,
+    LDHL_SP_s8 { s8: i8 } = 0xF8,
 
     RET = 0xC9,
     RETI = 0xD9,
@@ -315,8 +321,8 @@ pub enum Instruction {
     // 0xED
     // 0xFD
 
-    ADC_A_d8 { d8: u8 } = 0xCE,
-    SBC_A_d8 { d8: u8 } = 0xDE,
+    ADC_d8 { d8: u8 } = 0xCE,
+    SBC_d8 { d8: u8 } = 0xDE,
     XOR_d8 { d8: u8 } = 0xEE,
     CP_d8 { d8: u8 } = 0xFE,
 
@@ -379,8 +385,8 @@ impl Instruction {
         let instruction = match base_opcode {
             0x00 => Ok(Self::NOP),
             0x10 => Ok(Self::STOP),
-            0x20 => Ok(Self::JR_NZ_s8 { s8: immediate_s8!()? }),
-            0x30 => Ok(Self::JR_NC_s8 { s8: immediate_s8!()? }),
+            0x20 => Ok(Self::JR_NZ_r8 { r8: immediate_s8!()? }),
+            0x30 => Ok(Self::JR_NC_r8 { r8: immediate_s8!()? }),
             0x01 => Ok(Self::LD_BC_d16 { d16: immediate_d16!()? }),
             0x11 => Ok(Self::LD_DE_d16 { d16: immediate_d16!()? }),
             0x21 => Ok(Self::LD_HL_d16 { d16: immediate_d16!()? }),
@@ -409,10 +415,10 @@ impl Instruction {
             0x17 => Ok(Self::RLA),
             0x27 => Ok(Self::DAA),
             0x37 => Ok(Self::SCF),
-            0x08 => Ok(Self::LD_a16_SP { a16: immediate_d16!()? }),
-            0x18 => Ok(Self::JR_s8 { s8: immediate_s8!()? }),
-            0x28 => Ok(Self::JR_Z_s8 { s8: immediate_s8!()? }),
-            0x38 => Ok(Self::JR_C_s8 { s8: immediate_s8!()? }),
+            0x08 => Ok(Self::LD_a16_addr_SP { a16: immediate_d16!()? }),
+            0x18 => Ok(Self::JR_r8 { r8: immediate_s8!()? }),
+            0x28 => Ok(Self::JR_Z_r8 { r8: immediate_s8!()? }),
+            0x38 => Ok(Self::JR_C_r8 { r8: immediate_s8!()? }),
             0x09 => Ok(Self::ADD_HL_BC),
             0x19 => Ok(Self::ADD_HL_DE),
             0x29 => Ok(Self::ADD_HL_HL),
@@ -571,16 +577,16 @@ impl Instruction {
             0xBF => Ok(Self::CP_A),
             0xC0 => Ok(Self::RET_NZ),
             0xD0 => Ok(Self::RET_NC),
-            0xE0 => Ok(Self::LDH_a8_A { a8: immediate_d8!()? }),
-            0xF0 => Ok(Self::LDH_A_a8 { a8: immediate_d8!()? }),
+            0xE0 => Ok(Self::LD_a8_addr_A { a8: immediate_d8!()? }),
+            0xF0 => Ok(Self::LD_A_a8_addr { a8: immediate_d8!()? }),
             0xC1 => Ok(Self::POP_BC),
             0xD1 => Ok(Self::POP_DE),
             0xE1 => Ok(Self::POP_HL),
             0xF1 => Ok(Self::POP_AF),
             0xC2 => Ok(Self::JP_NZ_a16 { a16: immediate_d16!()? }),
             0xD2 => Ok(Self::JP_NC_a16 { a16: immediate_d16!()? }),
-            0xE2 => Ok(Self::LDH_C_A),
-            0xF2 => Ok(Self::LDH_A_C),
+            0xE2 => Ok(Self::LD_C_addr_A),
+            0xF2 => Ok(Self::LD_A_C_addr),
             0xC3 => Ok(Self::JP_A16 { a16: immediate_d16!()? }),
             0xF3 => Ok(Self::DI),
             0xC4 => Ok(Self::CALL_NZ_a16 { a16: immediate_d16!()? }),
@@ -589,7 +595,7 @@ impl Instruction {
             0xD5 => Ok(Self::PUSH_DE),
             0xE5 => Ok(Self::PUSH_HL),
             0xF5 => Ok(Self::PUSH_AF),
-            0xC6 => Ok(Self::ADD_A_d8 { d8: immediate_d8!()? }),
+            0xC6 => Ok(Self::ADD_d8 { d8: immediate_d8!()? }),
             0xD6 => Ok(Self::SUB_d8 { d8: immediate_d8!()? }),
             0xE6 => Ok(Self::AND_d8 { d8: immediate_d8!()? }),
             0xF6 => Ok(Self::OR_d8 { d8: immediate_d8!()? }),
@@ -600,7 +606,7 @@ impl Instruction {
             0xC8 => Ok(Self::RET_Z),
             0xD8 => Ok(Self::RET_C),
             0xE8 => Ok(Self::ADD_SP_s8 { s8: immediate_s8!()? }),
-            0xF8 => Ok(Self::LD_HL_SP_plus_s8 { s8: immediate_s8!()? }),
+            0xF8 => Ok(Self::LDHL_SP_s8 { s8: immediate_s8!()? }),
             0xC9 => Ok(Self::RET),
             0xD9 => Ok(Self::RETI),
             0xE9 => Ok(Self::JP_HL),
@@ -614,8 +620,8 @@ impl Instruction {
             0xCC => Ok(Self::CALL_Z_a16 { a16: immediate_d16!()? }),
             0xDC => Ok(Self::CALL_C_a16 { a16: immediate_d16!()? }),
             0xCD => Ok(Self::CALL_a16 { a16: immediate_d16!()? }),
-            0xCE => Ok(Self::ADC_A_d8 { d8: immediate_d8!()? }),
-            0xDE => Ok(Self::SBC_A_d8 { d8: immediate_d8!()? }),
+            0xCE => Ok(Self::ADC_d8 { d8: immediate_d8!()? }),
+            0xDE => Ok(Self::SBC_d8 { d8: immediate_d8!()? }),
             0xEE => Ok(Self::XOR_d8 { d8: immediate_d8!()? }),
             0xFE => Ok(Self::CP_d8 { d8: immediate_d8!()? }),
             0xCF => Ok(Self::RST_1),
@@ -819,8 +825,8 @@ impl Instruction {
             | Self::POP_DE
             | Self::POP_HL
             | Self::POP_AF
-            | Self::LDH_C_A
-            | Self::LDH_A_C
+            | Self::LD_C_addr_A
+            | Self::LD_A_C_addr
             | Self::DI
             | Self::PUSH_BC
             | Self::PUSH_DE
@@ -851,7 +857,7 @@ impl Instruction {
             | Self::JP_C_a16 { a16: d16 }
             | Self::LD_a16_addr_A { a16: d16 }
             | Self::LD_A_a16_addr { a16: d16 }
-            | Self::LD_a16_SP { a16: d16 }
+            | Self::LD_a16_addr_SP { a16: d16 }
             | Self::JP_NZ_a16 { a16: d16 }
             | Self::JP_NC_a16 { a16: d16 }
             | Self::CALL_NZ_a16 { a16: d16 }
@@ -863,15 +869,15 @@ impl Instruction {
             | Self::LD_SP_d16 { d16 } => BinaryInstruction::with_immediate16(opcode, d16),
 
             Self::ADD_SP_s8 { s8 }
-            | Self::LD_HL_SP_plus_s8 { s8 }
-            | Self::JR_NZ_s8 { s8 }
-            | Self::JR_NC_s8 { s8 }
-            | Self::JR_s8 { s8 }
-            | Self::JR_Z_s8 { s8 }
-            | Self::JR_C_s8 { s8 } => BinaryInstruction::with_immediate_signed8(opcode, s8),
+            | Self::LDHL_SP_s8 { s8 }
+            | Self::JR_NZ_r8 { r8: s8 }
+            | Self::JR_NC_r8 { r8: s8 }
+            | Self::JR_r8 { r8: s8 }
+            | Self::JR_Z_r8 { r8: s8 }
+            | Self::JR_C_r8 { r8: s8 } => BinaryInstruction::with_immediate_signed8(opcode, s8),
 
-            Self::ADC_A_d8 { d8 }
-            | Self::SBC_A_d8 { d8 }
+            Self::ADC_d8 { d8 }
+            | Self::SBC_d8 { d8 }
             | Self::XOR_d8 { d8 }
             | Self::CP_d8 { d8 }
             | Self::LD_B_d8 { d8 }
@@ -882,15 +888,32 @@ impl Instruction {
             | Self::LD_E_d8 { d8 }
             | Self::LD_L_d8 { d8 }
             | Self::LD_A_d8 { d8 }
-            | Self::LDH_a8_A { a8: d8 }
-            | Self::LDH_A_a8 { a8: d8 }
-            | Self::ADD_A_d8 { d8 }
+            | Self::LD_a8_addr_A { a8: d8 }
+            | Self::LD_A_a8_addr { a8: d8 }
+            | Self::ADD_d8 { d8 }
             | Self::SUB_d8 { d8 }
             | Self::AND_d8 { d8 }
             | Self::OR_d8 { d8 } => BinaryInstruction::with_immediate8(opcode, d8),
         }
     }
+
+    /// Parse a single line.
+    #[expect(unused)]
+    pub fn parse_line(string: &str, syntax_dialect: SyntaxDialect) -> Result<Self, InstructionParseError> {
+        todo!()
+    }
+
+    /// Return an object that can display this instruction.
+    #[must_use]
+    pub fn display<'a, F: Fn(u16) -> Option<&'a str>>(self, config: &'a FormatConfig<'a, F>, pc: u16) -> InstructionDisplay<'a, F> {
+        InstructionDisplay {
+            instruction: self,
+            config,
+            pc
+        }
+    }
 }
+
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct BinaryInstruction {
@@ -1321,6 +1344,12 @@ impl<I: Iterator<Item = u8>> InstructionDecoderByteIterator<I> {
     pub const fn get_error(&self) -> Option<ReadInstructionError> {
         self.last_error
     }
+
+    /// Get the inner iterator back.
+    #[inline]
+    pub fn into_inner(self) -> I {
+        self.inner
+    }
 }
 
 impl<I: Iterator<Item = u8>> From<I> for InstructionDecoderByteIterator<I> {
@@ -1354,6 +1383,33 @@ impl<I: Iterator<Item = u8>> Iterator for InstructionDecoderByteIterator<I> {
             }
         }
     }
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum InstructionParseError {
+
+}
+
+/// Format config for formatting instructions.
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct FormatConfig<'a, F: Fn(u16) -> Option<&'a str>> {
+    /// Syntax to use.
+    pub syntax_dialect: SyntaxDialect,
+
+    /// Preferred casing of all instructions.
+    pub casing: Casing,
+
+    /// Symbol getter.
+    pub get_symbol: F,
+
+    /// Prefix hex with `0x` (may break compatibility with other tools)
+    pub prefix_hex: bool
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum Casing {
+    Lowercase,
+    Uppercase
 }
 
 #[cfg(test)]
