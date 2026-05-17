@@ -826,3 +826,82 @@ impl<'a, F: Fn(u16) -> Option<&'a str>> Display for InstructionDisplay<'a, F> {
         }
     }
 }
+
+
+
+/// Format config for formatting instructions.
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct FormatConfig<'a, F: Fn(u16) -> Option<&'a str>> {
+    /// Syntax to use.
+    pub syntax_dialect: SyntaxDialect,
+
+    /// Preferred casing of all instructions.
+    pub casing: Casing,
+
+    /// Symbol resolver.
+    pub resolve_symbol: F,
+
+    /// Prefer to prefix hex with `0x` (may break compatibility with other tools)
+    pub prefix_hex: bool,
+
+    /// If the instruction name (e.g. POP) is fewer than this number of characters, pad it out with
+    /// spaces.
+    pub instruction_spacing: usize,
+
+    /// Also attempt to resolve all 16-bit values.
+    pub resolve_u16: bool
+}
+
+impl<'a, F: Fn(u16) -> Option<&'a str>> FormatConfig<'a, F> {
+    pub fn default_with_symbol_resolver(resolver: F) -> FormatConfig<'a, F> {
+        Self {
+            syntax_dialect: SyntaxDialect::ISAS,
+            casing: Casing::Lowercase,
+            resolve_symbol: resolver,
+            prefix_hex: false,
+            instruction_spacing: 0,
+            resolve_u16: false
+        }
+    }
+
+    #[expect(unused)]
+    pub(crate) fn write_hex_u8(&self, u8: u8, f: &mut Formatter) -> core::fmt::Result {
+        if self.prefix_hex {
+            f.write_fmt(format_args!("0x{u8:02X}"))
+        }
+        else {
+            Display::fmt(&self.syntax_dialect.format_hex_u8(u8), f)
+        }
+    }
+
+    pub(crate) fn write_hex_u16(&self, u16: u16, f: &mut Formatter) -> core::fmt::Result {
+        if self.prefix_hex {
+            f.write_fmt(format_args!("0x{u16:04X}"))
+        }
+        else {
+            Display::fmt(&self.syntax_dialect.format_hex_u16(u16), f)
+        }
+    }
+
+    #[expect(unused)]
+    pub(crate) fn write_hex_u32(&self, u32: u32, f: &mut Formatter) -> core::fmt::Result {
+        if self.prefix_hex {
+            f.write_fmt(format_args!("0x{u32:08X}"))
+        }
+        else {
+            Display::fmt(&self.syntax_dialect.format_hex_u32(u32), f)
+        }
+    }
+}
+
+impl Default for FormatConfig<'static, fn(u16) -> Option<&'static str>> {
+    fn default() -> Self {
+        Self::default_with_symbol_resolver(|_| None)
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum Casing {
+    Lowercase,
+    Uppercase
+}

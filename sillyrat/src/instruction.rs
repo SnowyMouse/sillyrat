@@ -1,9 +1,11 @@
 mod format;
+mod parse;
 
-pub use format::InstructionDisplay;
+pub use format::{InstructionDisplay, FormatConfig};
 
-use core::fmt::{Debug, Display, Formatter, Write};
+use core::fmt::{Debug, Formatter, Write};
 use crate::format::SyntaxDialect;
+use crate::instruction::parse::InstructionParseError;
 
 /// All possible SM83 instructions in binary form.
 #[allow(nonstandard_style, missing_docs)]
@@ -848,7 +850,7 @@ impl Instruction {
             | Self::RST_5
             | Self::RST_7 => BinaryInstruction::single_byte(opcode),
 
-            Self::PrefixedInstruction { instruction } => BinaryInstruction::with_immediate8(opcode, instruction.opcode()),
+            Self::PrefixedInstruction { instruction } => BinaryInstruction::with_immediate_u8(opcode, instruction.opcode()),
 
             Self::CALL_a16 { a16: d16 }
             | Self::CALL_Z_a16 { a16: d16 }
@@ -866,7 +868,7 @@ impl Instruction {
             | Self::LD_BC_d16 { d16 }
             | Self::LD_DE_d16 { d16 }
             | Self::LD_HL_d16 { d16 }
-            | Self::LD_SP_d16 { d16 } => BinaryInstruction::with_immediate16(opcode, d16),
+            | Self::LD_SP_d16 { d16 } => BinaryInstruction::with_immediate_u16(opcode, d16),
 
             Self::ADD_SP_s8 { s8 }
             | Self::LDHL_SP_s8 { s8 }
@@ -874,7 +876,7 @@ impl Instruction {
             | Self::JR_NC_r8 { r8: s8 }
             | Self::JR_r8 { r8: s8 }
             | Self::JR_Z_r8 { r8: s8 }
-            | Self::JR_C_r8 { r8: s8 } => BinaryInstruction::with_immediate_signed8(opcode, s8),
+            | Self::JR_C_r8 { r8: s8 } => BinaryInstruction::with_immediate_i8(opcode, s8),
 
             Self::ADC_d8 { d8 }
             | Self::SBC_d8 { d8 }
@@ -893,7 +895,7 @@ impl Instruction {
             | Self::ADD_d8 { d8 }
             | Self::SUB_d8 { d8 }
             | Self::AND_d8 { d8 }
-            | Self::OR_d8 { d8 } => BinaryInstruction::with_immediate8(opcode, d8),
+            | Self::OR_d8 { d8 } => BinaryInstruction::with_immediate_u8(opcode, d8),
         }
     }
 
@@ -946,7 +948,7 @@ impl BinaryInstruction {
 
     #[inline]
     #[must_use]
-    const fn with_immediate8(opcode: u8, immediate: u8) -> BinaryInstruction {
+    const fn with_immediate_u8(opcode: u8, immediate: u8) -> BinaryInstruction {
         BinaryInstruction {
             bytes: [opcode, immediate, 0],
             length: 2
@@ -955,7 +957,7 @@ impl BinaryInstruction {
 
     #[inline]
     #[must_use]
-    const fn with_immediate_signed8(opcode: u8, immediate: i8) -> BinaryInstruction {
+    const fn with_immediate_i8(opcode: u8, immediate: i8) -> BinaryInstruction {
         BinaryInstruction {
             bytes: [opcode, immediate as u8, 0],
             length: 2
@@ -964,7 +966,7 @@ impl BinaryInstruction {
 
     #[inline]
     #[must_use]
-    const fn with_immediate16(opcode: u8, immediate: u16) -> BinaryInstruction {
+    const fn with_immediate_u16(opcode: u8, immediate: u16) -> BinaryInstruction {
         let [low, high] = immediate.to_le_bytes();
 
         BinaryInstruction {
@@ -1383,88 +1385,6 @@ impl<I: Iterator<Item = u8>> Iterator for InstructionDecoderByteIterator<I> {
             }
         }
     }
-}
-
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub enum InstructionParseError {
-
-}
-
-/// Format config for formatting instructions.
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub struct FormatConfig<'a, F: Fn(u16) -> Option<&'a str>> {
-    /// Syntax to use.
-    pub syntax_dialect: SyntaxDialect,
-
-    /// Preferred casing of all instructions.
-    pub casing: Casing,
-
-    /// Symbol resolver.
-    pub resolve_symbol: F,
-
-    /// Prefer to prefix hex with `0x` (may break compatibility with other tools)
-    pub prefix_hex: bool,
-
-    /// If the instruction name (e.g. POP) is fewer than this number of characters, pad it out with
-    /// spaces.
-    pub instruction_spacing: usize,
-
-    /// Also attempt to resolve all 16-bit values.
-    pub resolve_u16: bool
-}
-
-impl<'a, F: Fn(u16) -> Option<&'a str>> FormatConfig<'a, F> {
-    pub fn default_with_symbol_resolver(resolver: F) -> FormatConfig<'a, F> {
-        Self {
-            syntax_dialect: SyntaxDialect::ISAS,
-            casing: Casing::Lowercase,
-            resolve_symbol: resolver,
-            prefix_hex: false,
-            instruction_spacing: 0,
-            resolve_u16: false
-        }
-    }
-
-    #[expect(unused)]
-    pub(crate) fn write_hex_u8(&self, u8: u8, f: &mut Formatter) -> core::fmt::Result {
-        if self.prefix_hex {
-            f.write_fmt(format_args!("0x{u8:02X}"))
-        }
-        else {
-            Display::fmt(&self.syntax_dialect.format_hex_u8(u8), f)
-        }
-    }
-
-    pub(crate) fn write_hex_u16(&self, u16: u16, f: &mut Formatter) -> core::fmt::Result {
-        if self.prefix_hex {
-            f.write_fmt(format_args!("0x{u16:04X}"))
-        }
-        else {
-            Display::fmt(&self.syntax_dialect.format_hex_u16(u16), f)
-        }
-    }
-
-    #[expect(unused)]
-    pub(crate) fn write_hex_u32(&self, u32: u32, f: &mut Formatter) -> core::fmt::Result {
-        if self.prefix_hex {
-            f.write_fmt(format_args!("0x{u32:08X}"))
-        }
-        else {
-            Display::fmt(&self.syntax_dialect.format_hex_u32(u32), f)
-        }
-    }
-}
-
-impl Default for FormatConfig<'static, fn(u16) -> Option<&'static str>> {
-    fn default() -> Self {
-        Self::default_with_symbol_resolver(|_| None)
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub enum Casing {
-    Lowercase,
-    Uppercase
 }
 
 #[cfg(test)]
